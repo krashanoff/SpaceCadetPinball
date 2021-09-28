@@ -1,22 +1,82 @@
 #include "pch.h"
 #include "midi.h"
 
-
 #include "pb.h"
 
-
-std::vector<Mix_Music*> midi::LoadedTracks{};
-Mix_Music* midi::track1, * midi::track2, * midi::track3;
+std::vector<midi_song *> midi::LoadedTracks{};
+midi_song *midi::track1, *midi::track2, *midi::track3;
 MidiTracks midi::active_track, midi::NextTrack;
 int midi::Volume = MIX_MAX_VOLUME;
 bool midi::IsPlaying = false, midi::MixOpen = false;
+
+#ifndef TSF_RENDER_EFFECTSAMPLEBLOCK
+#define TSF_RENDER_EFFECTSAMPLEBLOCK 64
+#endif
+
+tml_message *midi::currentMessage = nullptr;
+static float midiTime = 0.0f;
+static float sampPerSec = 1000.0 / 22050.0;
+static tsf *tsfSynth = nullptr;
+
+void midi::sdl_audio_callback(void *data, Uint8 *stream, int len)
+{
+	memset(stream, 0, len);
+
+	if (tsfSynth == nullptr)
+	{
+		return;
+	}
+
+	int SampleBlock, SampleCount = (len / (2 * sizeof(short)));
+	for (SampleBlock = TSF_RENDER_EFFECTSAMPLEBLOCK; SampleCount; SampleCount -= SampleBlock, stream += (SampleBlock * (2 * sizeof(short))))
+	{
+		if (SampleBlock > SampleCount)
+			SampleBlock = SampleCount;
+
+		for (midiTime += SampleBlock * sampPerSec; midi::currentMessage && midiTime >= midi::currentMessage->time;)
+		{
+			switch (midi::currentMessage->type)
+			{
+			case TML_PROGRAM_CHANGE:
+				tsf_channel_set_presetnumber(tsfSynth, midi::currentMessage->channel, midi::currentMessage->program, (midi::currentMessage->channel == 9));
+				tsf_channel_midi_control(tsfSynth, midi::currentMessage->channel, TML_ALL_NOTES_OFF, 0);
+				break;
+			case TML_NOTE_ON:
+				tsf_channel_note_on(tsfSynth, midi::currentMessage->channel, midi::currentMessage->key, midi::currentMessage->velocity / 127.0f);
+				break;
+			case TML_NOTE_OFF:
+				tsf_channel_note_off(tsfSynth, midi::currentMessage->channel, midi::currentMessage->key);
+				break;
+			case TML_PITCH_BEND:
+				tsf_channel_set_pitchwheel(tsfSynth, midi::currentMessage->channel, midi::currentMessage->pitch_bend);
+				break;
+			case TML_CONTROL_CHANGE:
+				tsf_channel_midi_control(tsfSynth, midi::currentMessage->channel, midi::currentMessage->control, midi::currentMessage->control_value);
+				break;
+			}
+
+			if (midi::currentMessage->next == nullptr)
+			{
+				midiTime = 0.0f;
+				midi::currentMessage = midi::TrackToMidi(midi::active_track)->start;
+			}
+			else
+			{
+				midi::currentMessage = midi::currentMessage->next;
+			}
+		}
+
+		// Render the block of audio samples in float format
+		tsf_render_short(tsfSynth, (short *)stream, SampleBlock, 0);
+	}
+}
 
 constexpr uint32_t FOURCC(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
 {
 	return static_cast<uint32_t>((d << 24) | (c << 16) | (b << 8) | a);
 }
 
-int ToVariableLen(uint32_t value, uint32_t& dst)
+int ToVariableLen(uint32_t value, uint32_t &dst)
 {
 	auto count = 1;
 	dst = value & 0x7F;
@@ -63,6 +123,11 @@ void midi::StopPlayback()
 
 int midi::music_init(bool mixOpen, int volume)
 {
+#ifdef MUSIC_TSF
+	extern unsigned char gm_sf2[];
+	extern unsigned int gm_sf2_len;
+#endif
+
 	MixOpen = mixOpen;
 	SetVolume(volume);
 	active_track = MidiTracks::None;
@@ -86,6 +151,31 @@ int midi::music_init(bool mixOpen, int volume)
 		track1 = load_track("PINBALL");
 	}
 
+	// #if MUSIC_TSF
+	// currentMessage = nullptr;
+	// currentMidi = {false};
+
+	// tsfSynth = tsf_load_memory(gm_sf2, (int)gm_sf2_len);
+
+	// int sampleRate;
+	// if (Mix_QuerySpec(&sampleRate, nullptr, nullptr)) {
+	// 	tsf_set_output(tsfSynth, TSF_STEREO_INTERLEAVED, sampleRate, 0.0f);
+	// 	sampPerSec = 1000.0f / float(sampleRate);
+	// }
+
+	// auto fileName = std::string(pinball::get_rc_string(156, 0));
+	// std::transform(fileName.begin(), fileName.end(), fileName.begin(), [](unsigned char c) { return std::toupper(c); });
+	// auto filePath = pinball::make_path_name(fileName);
+
+	// auto midi = tml_load_filename(filePath.c_str());
+	// if (midi != nullptr) {
+	// 	currentMidi = {true, midi};
+	// }
+
+	// Mix_HookMusic(midi::sdl_audio_callback, nullptr);
+	// return currentMidi.valid;
+	// #endif
+
 	return track1 != nullptr;
 }
 
@@ -95,7 +185,11 @@ void midi::music_shutdown()
 
 	for (auto midi : LoadedTracks)
 	{
+#ifdef MUSIC_TSF
+// tsf_reset(midi->start);
+#else
 		Mix_FreeMusic(midi);
+#endif
 	}
 	active_track = MidiTracks::None;
 	LoadedTracks.clear();
@@ -108,7 +202,7 @@ void midi::SetVolume(int volume)
 		Mix_VolumeMusic(volume);
 }
 
-Mix_Music* midi::load_track(std::string fileName)
+midi_song *midi::load_track(std::string fileName)
 {
 	if (!MixOpen || pb::quickFlag)
 		return nullptr;
@@ -131,17 +225,18 @@ Mix_Music* midi::load_track(std::string fileName)
 	return audio;
 }
 
-Mix_Music* midi::load_track_sub(std::string fileName, bool isMidi)
+midi_song *midi::load_track_sub(std::string fileName, bool isMidi)
 {
 	// FT has music in two formats, depending on game version: MIDI in 16bit, MIDS in 32bit.
 	// 3DPB music is MIDI only.
-	Mix_Music* audio = nullptr;
+	Mix_Music *audio = nullptr;
 	fileName += isMidi ? ".MID" : ".MDS";
 	for (int i = 0; i < 2; i++)
 	{
 		if (i == 1)
 			std::transform(fileName.begin(), fileName.end(), fileName.begin(),
-			               [](unsigned char c) { return std::tolower(c); });
+										 [](unsigned char c)
+										 { return std::tolower(c); });
 		if (isMidi)
 		{
 			auto filePath = pb::make_path_name(fileName);
@@ -173,7 +268,9 @@ Mix_Music* midi::load_track_sub(std::string fileName, bool isMidi)
 		}
 	}
 
-	return audio;
+	midi_song *song = new midi_song;
+	song->start = nullptr; // TODOLK: audio
+	return song;
 }
 
 bool midi::play_track(MidiTracks track, bool replay)
@@ -190,11 +287,13 @@ bool midi::play_track(MidiTracks track, bool replay)
 		return false;
 	}
 
+#ifdef MUSIC_SDL
 	if (MixOpen && Mix_PlayMusic(midi, -1))
 	{
 		active_track = MidiTracks::None;
 		return false;
 	}
+#endif
 
 	// On Windows, MIDI volume can only be set during playback.
 	// And it changes application master volume for some reason.
@@ -211,11 +310,22 @@ MidiTracks midi::get_active_track()
 		return active_track;
 }
 
-Mix_Music* midi::TrackToMidi(MidiTracks track)
+midi_song *midi::TrackToMidi(MidiTracks track)
 {
-	Mix_Music* midi;
+	Mix_Music *midi;
 	switch (track)
 	{
+#ifdef MUSIC_TSF
+	case MidiTracks::Track1:
+		midi::currentMessage = track1->start;
+		break;
+	case MidiTracks::Track2:
+		midi::currentMessage = track2->start;
+		break;
+	case MidiTracks::Track3:
+		midi::currentMessage = track3->start;
+		break;
+#else
 	default:
 	case MidiTracks::None:
 		midi = nullptr;
@@ -229,8 +339,9 @@ Mix_Music* midi::TrackToMidi(MidiTracks track)
 	case MidiTracks::Track3:
 		midi = track3;
 		break;
+#endif
 	}
-	return midi;
+	return nullptr;
 }
 
 /// <summary>
@@ -238,7 +349,7 @@ Mix_Music* midi::TrackToMidi(MidiTracks track)
 /// </summary>
 /// <param name="file">Path to .MDS file</param>
 /// <returns>Vector that contains MIDI file</returns>
-std::vector<uint8_t>* midi::MdsToMidi(std::string file)
+std::vector<uint8_t> *midi::MdsToMidi(std::string file)
 {
 	auto fileHandle = fopenu(file.c_str(), "rb");
 	if (!fileHandle)
@@ -247,13 +358,13 @@ std::vector<uint8_t>* midi::MdsToMidi(std::string file)
 	fseek(fileHandle, 0, SEEK_END);
 	auto fileSize = static_cast<uint32_t>(ftell(fileHandle));
 	auto buffer = new uint8_t[fileSize];
-	auto fileBuf = reinterpret_cast<riff_header*>(buffer);
+	auto fileBuf = reinterpret_cast<riff_header *>(buffer);
 	fseek(fileHandle, 0, SEEK_SET);
 	fread(fileBuf, 1, fileSize, fileHandle);
 	fclose(fileHandle);
 
 	int returnCode = 0;
-	std::vector<uint8_t>* midiOut = nullptr;
+	std::vector<uint8_t> *midiOut = nullptr;
 	do
 	{
 		if (fileSize < 12)
@@ -262,8 +373,8 @@ std::vector<uint8_t>* midi::MdsToMidi(std::string file)
 			break;
 		}
 		if (fileBuf->Riff != FOURCC('R', 'I', 'F', 'F') ||
-			fileBuf->Mids != FOURCC('M', 'I', 'D', 'S') ||
-			fileBuf->Fmt != FOURCC('f', 'm', 't', ' '))
+				fileBuf->Mids != FOURCC('M', 'I', 'D', 'S') ||
+				fileBuf->Fmt != FOURCC('f', 'm', 't', ' '))
 		{
 			returnCode = 3;
 			break;
@@ -285,8 +396,7 @@ std::vector<uint8_t>* midi::MdsToMidi(std::string file)
 		}
 
 		auto streamIdUsed = fileBuf->dwFlags == 0;
-		auto dataChunk = reinterpret_cast<riff_data*>(reinterpret_cast<char*>(&fileBuf->dwTimeFormat) + fileBuf->
-			FmtSize);
+		auto dataChunk = reinterpret_cast<riff_data *>(reinterpret_cast<char *>(&fileBuf->dwTimeFormat) + fileBuf->FmtSize);
 		if (dataChunk->Data != FOURCC('d', 'a', 't', 'a'))
 		{
 			returnCode = 3;
@@ -306,7 +416,7 @@ std::vector<uint8_t>* midi::MdsToMidi(std::string file)
 			auto eventCount = srcPtr->CbBuffer / (4 * eventSizeInt);
 
 			auto currentTicks = srcPtr->TkStart;
-			auto srcPtr2 = reinterpret_cast<uint32_t*>(srcPtr->AData);
+			auto srcPtr2 = reinterpret_cast<uint32_t *>(srcPtr->AData);
 			for (auto i = 0u; i < eventCount; i++)
 			{
 				currentTicks += srcPtr2[0];
@@ -315,30 +425,28 @@ std::vector<uint8_t>* midi::MdsToMidi(std::string file)
 				srcPtr2 += eventSizeInt;
 			}
 
-			srcPtr = reinterpret_cast<riff_block*>(&srcPtr->AData[srcPtr->CbBuffer]);
+			srcPtr = reinterpret_cast<riff_block *>(&srcPtr->AData[srcPtr->CbBuffer]);
 		}
 
 		// MIDS events can be out of order in the file
-		std::sort(midiEvents.begin(), midiEvents.end(), [](const midi_event& lhs, const midi_event& rhs)
-		{
-			return lhs.iTicks < rhs.iTicks;
-		});
+		std::sort(midiEvents.begin(), midiEvents.end(), [](const midi_event &lhs, const midi_event &rhs)
+							{ return lhs.iTicks < rhs.iTicks; });
 
 		// MThd chunk
-		std::vector<uint8_t>& midiBytes = *new std::vector<uint8_t>();
+		std::vector<uint8_t> &midiBytes = *new std::vector<uint8_t>();
 		midiOut = &midiBytes;
 		midi_header header(SwapByteOrderShort(static_cast<uint16_t>(fileBuf->dwTimeFormat)));
-		auto headerData = reinterpret_cast<const uint8_t*>(&header);
+		auto headerData = reinterpret_cast<const uint8_t *>(&header);
 		midiBytes.insert(midiBytes.end(), headerData, headerData + sizeof header);
 
 		// MTrk chunk
 		midi_track track(7);
-		auto trackData = reinterpret_cast<const uint8_t*>(&track);
+		auto trackData = reinterpret_cast<const uint8_t *>(&track);
 		midiBytes.insert(midiBytes.end(), trackData, trackData + sizeof track);
 		auto lengthPos = midiBytes.size() - 4;
 
 		auto prevTime = 0u;
-		for (const auto& event : midiEvents)
+		for (const auto &event : midiEvents)
 		{
 			assertm(event.iTicks >= prevTime, "MIDS events: negative delta-time");
 			uint32_t delta = event.iTicks - prevTime;
@@ -347,33 +455,33 @@ std::vector<uint8_t>* midi::MdsToMidi(std::string file)
 			// Delta time is in variable quantity, Big Endian
 			uint32_t deltaVarLen;
 			auto count = ToVariableLen(delta, deltaVarLen);
-			auto deltaData = reinterpret_cast<const uint8_t*>(&deltaVarLen);
+			auto deltaData = reinterpret_cast<const uint8_t *>(&deltaVarLen);
 			midiBytes.insert(midiBytes.end(), deltaData, deltaData + count);
 
 			switch (event.iEvent >> 24)
 			{
 			case 0:
-				{
-					// Type 0 - MIDI short message. 3 bytes: xx p1 p2 00, where xx - message, p* - parameters
-					// Some of the messages have only one parameter
-					auto msgMask = (event.iEvent) & 0xF0;
-					auto shortMsg = (msgMask == 0xC0 || msgMask == 0xD0);
-					auto eventData = reinterpret_cast<const uint8_t*>(&event.iEvent);
-					midiBytes.insert(midiBytes.end(), eventData, eventData + (shortMsg ? 2 : 3));
-					break;
-				}
+			{
+				// Type 0 - MIDI short message. 3 bytes: xx p1 p2 00, where xx - message, p* - parameters
+				// Some of the messages have only one parameter
+				auto msgMask = (event.iEvent) & 0xF0;
+				auto shortMsg = (msgMask == 0xC0 || msgMask == 0xD0);
+				auto eventData = reinterpret_cast<const uint8_t *>(&event.iEvent);
+				midiBytes.insert(midiBytes.end(), eventData, eventData + (shortMsg ? 2 : 3));
+				break;
+			}
 			case 1:
-				{
-					// Type 1 - tempo change, 3 bytes: xx xx xx 01
-					// Meta message, set tempo, 3 bytes payload
-					const uint8_t metaSetTempo[] = {0xFF, 0x51, 0x03};
-					midiBytes.insert(midiBytes.end(), metaSetTempo, metaSetTempo + 3);
+			{
+				// Type 1 - tempo change, 3 bytes: xx xx xx 01
+				// Meta message, set tempo, 3 bytes payload
+				const uint8_t metaSetTempo[] = {0xFF, 0x51, 0x03};
+				midiBytes.insert(midiBytes.end(), metaSetTempo, metaSetTempo + 3);
 
-					auto eventBE = SwapByteOrderInt(event.iEvent);
-					auto eventData = reinterpret_cast<const uint8_t*>(&eventBE) + 1;
-					midiBytes.insert(midiBytes.end(), eventData, eventData + 3);
-					break;
-				}
+				auto eventBE = SwapByteOrderInt(event.iEvent);
+				auto eventData = reinterpret_cast<const uint8_t *>(&eventBE) + 1;
+				midiBytes.insert(midiBytes.end(), eventData, eventData + 3);
+				break;
+			}
 			default:
 				assertm(0, "MIDS events: uknown event");
 				break;
@@ -386,10 +494,9 @@ std::vector<uint8_t>* midi::MdsToMidi(std::string file)
 
 		// Set final MTrk size
 		auto lengthBE = SwapByteOrderInt(static_cast<uint32_t>(midiBytes.size()) - sizeof header - sizeof track);
-		auto lengthData = reinterpret_cast<const uint8_t*>(&lengthBE);
+		auto lengthData = reinterpret_cast<const uint8_t *>(&lengthBE);
 		std::copy_n(lengthData, 4, midiBytes.begin() + lengthPos);
-	}
-	while (false);
+	} while (false);
 
 	delete[] buffer;
 	if (returnCode && midiOut)

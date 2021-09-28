@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef MUSIC_TSF
+#include "tml.h"
+#include "tsf.h"
+#endif
+
 constexpr uint32_t SwapByteOrderInt(uint32_t val)
 {
 	return (val >> 24) |
@@ -91,6 +96,17 @@ enum class MidiTracks
 	Track3
 };
 
+struct midi_song 
+{
+	bool valid;
+
+#ifdef MUSIC_TSF
+	tml_message* start;
+#else
+	Mix_Music* handle;
+#endif
+};
+
 class midi
 {
 public:
@@ -102,15 +118,26 @@ public:
 	static bool play_track(MidiTracks track, bool replay);
 	static MidiTracks get_active_track();
 private:
-	static std::vector<Mix_Music*> LoadedTracks;
-	static Mix_Music* track1, * track2, * track3;
+	static std::vector<midi_song*> LoadedTracks;
+	static midi_song* track1, * track2, * track3;
 	static MidiTracks active_track, NextTrack;
 	static int Volume;
 	static bool IsPlaying, MixOpen;
 
+#ifdef MUSIC_TSF
+	static tml_message* currentMessage;
+	static void sdl_audio_callback(void* data, Uint8 *stream, int len);
+#endif
+
 	static void StopPlayback();
-	static Mix_Music* load_track(std::string fileName);
-	static Mix_Music* load_track_sub(std::string fileName, bool isMidi);
-	static Mix_Music* TrackToMidi(MidiTracks track);
+	static midi_song* load_track(std::string fileName);
+	static midi_song* load_track_sub(std::string fileName, bool isMidi);
+	static midi_song* TrackToMidi(MidiTracks track);
+
+	static int some_flag1; // TODOLK: lol what is this
+	static int music_init_ft();
+	static void music_shutdown_ft();
+	static int play_ft(midi_song* midi);
+	static int stop_ft();
 	static std::vector<uint8_t>* MdsToMidi(std::string file);
 };

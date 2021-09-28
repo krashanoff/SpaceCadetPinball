@@ -23,7 +23,7 @@ if(APPLE)
     set(MACOSX_RPATH)
     set(CMAKE_BUILD_WITH_INSTALL_RPATH true)
     set(CMAKE_INSTALL_RPATH "@executable_path/../Frameworks")
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+#     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
     list(APPEND SDL2_PATH "${CMAKE_CURRENT_LIST_DIR}/Libs")
     list(APPEND SDL2_MIXER_PATH "${CMAKE_CURRENT_LIST_DIR}/Libs")
 endif()
@@ -31,16 +31,27 @@ endif()
 # SDL2main is not needed
 set(SDL2_BUILDING_LIBRARY ON)
 
-find_package(SDL2 REQUIRED)
-FIND_PACKAGE(SDL2_mixer REQUIRED)
+if(${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
+        set(USE_FLAGS "-s USE_SDL=2 -s USE_SDL_MIXER=2")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${USE_FLAGS}")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${USE_FLAGS}")
+        set(CMAKE_EXECUTABLE_SUFFIX .html)
+
+        set(SDL2_FOUND TRUE)
+        set(SDL2_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include/SDL2/")
+        set(SDL2_MIXER_INCLUDE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/include/SDL2/")
+        set(SDL2_LIBRARIES "nul")
+else()
+        find_package(SDL2 REQUIRED)
+        find_package(SDL2_mixer REQUIRED)
+endif()
 
 include_directories(${SDL2_INCLUDE_DIR} ${SDL2_MIXER_INCLUDE_DIR})
 get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 foreach(dir ${dirs})
   message(STATUS "Include dir='${dir}'")
 endforeach()
-
-
 
 set(SOURCE_FILES
         SpaceCadetPinball/control.cpp
@@ -185,6 +196,10 @@ set(SOURCE_FILES
         SpaceCadetPinball/imstb_truetype.h
         SpaceCadetPinball/DebugOverlay.cpp
         SpaceCadetPinball/DebugOverlay.h
+        SpaceCadetPinball/gm_sf2.cpp
+        SpaceCadetPinball/tsf.cpp
+        SpaceCadetPinball/tml.h
+        SpaceCadetPinball/tsf.h
         )
 
 # On Windows, include resource file with the icon
@@ -216,6 +231,15 @@ if(${CMAKE_VERSION} VERSION_GREATER "3.16.0" OR ${CMAKE_VERSION} VERSION_EQUAL "
 endif()
 
 target_link_libraries(SpaceCadetPinball ${SDL2_LIBRARY} ${SDL2_MIXER_LIBRARY})
+target_compile_definitions(SpaceCadetPinball PRIVATE -DMUSIC_TSF)
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
+        target_link_libraries(SpaceCadetPinball idbfs.js)
+        set_target_properties(SpaceCadetPinball PROPERTIES LINK_FLAGS
+        "-s ALLOW_MEMORY_GROWTH=1 -s FORCE_FILESYSTEM=1 -s DEMANGLE_SUPPORT=1 \
+        --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/SpaceCadetPinball/emscripten_shell.html \
+        --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/game_resources@game_resources --bind")
+endif()
 
 # On Windows, copy DLL to output
 if(WIN32)

@@ -13,9 +13,16 @@
 
 constexpr const char* winmain::Version;
 
-SDL_Window* winmain::MainWindow = nullptr;
-SDL_Renderer* winmain::Renderer = nullptr;
-ImGuiIO* winmain::ImIO = nullptr;
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <unistd.h>
+#endif
+
+const double TargetFps = 60, TargetFrameTime = 1000 / TargetFps;
+
+SDL_Window *winmain::MainWindow = nullptr;
+SDL_Renderer *winmain::Renderer = nullptr;
+ImGuiIO *winmain::ImIO = nullptr;
 
 int winmain::return_value = 0;
 bool winmain::bQuit = false;
@@ -51,6 +58,29 @@ winmain::DurationMs winmain::SpinThreshold = DurationMs(0.005);
 WelfordState winmain::SleepState{};
 int winmain::CursorIdleCounter = 0;
 
+static bool loop_stop = false;
+
+void run_loop(std::function<void()> fn)
+{
+#ifdef __EMSCRIPTEN__
+	emscripten_set_main_loop_arg([](void *arg)
+								 {
+									 auto *fn_ptr = (std::function<void()> *)arg;
+									 if (!loop_stop && fn_ptr != nullptr)
+									 {
+										 auto &fn = *fn_ptr;
+										 fn();
+									 }
+								 },
+								 (void *)&fn, 60, 1);
+#else
+	while (!loop_stop)
+	{
+		fn();
+	}
+#endif
+}
+
 int winmain::WinMain(LPCSTR lpCmdLine)
 {
 	std::set_new_handler(memalloc_failure);
@@ -78,8 +108,7 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 		pb::get_rc_string(Msg::STRING139),
 		SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
 		800, 556,
-		SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE
-	);
+		SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
 	MainWindow = window;
 	if (!window)
 	{
@@ -301,8 +330,17 @@ void winmain::MainLoop()
 			}
 		}
 
-		if (!ProcessWindowMessages() || bQuit)
-			break;
+				// 				 gdrv::copy_bitmap(&render::vscreen, 300, 10, 0, 30, &gfr_display, 0, 0);
+				// 				 gdrv::fill_bitmap(&gfr_display, 300, 10, 0, 0, 0);
+				// 			 }
+				// 		 }
+				// 		 prevTime = curTime;
+				// 	 }
+				// 	 else
+				// 	 {
+				// 		 prevTime = 0;
+				// 	 }
+				//  }
 
 		if (has_focus)
 		{
@@ -677,7 +715,7 @@ void winmain::RenderUi()
 				}
 				for (auto i = 0; i <= fullscrn::GetMaxResolution(); i++)
 				{
-					auto& res = fullscrn::resolution_array[i];
+					auto &res = fullscrn::resolution_array[i];
 					snprintf(buffer, sizeof buffer - 1, "%d x %d", res.ScreenWidth, res.ScreenHeight);
 					if (ImGui::MenuItem(buffer, nullptr, Options.Resolution == i))
 					{
@@ -711,7 +749,7 @@ void winmain::RenderUi()
 			{
 				ShowImGuiDemo ^= true;
 			}
-#endif
+
 			if (ImGui::MenuItem("Sprite Viewer", nullptr, ShowSpriteViewer))
 			{
 				if (!ShowSpriteViewer)
@@ -768,6 +806,7 @@ void winmain::RenderUi()
 				ImGui::EndMenu();
 			}
 			ImGui::Separator();
+#endif
 
 			if (ImGui::MenuItem(pb::get_rc_string(Msg::Menu1_About_Pinball)))
 			{
@@ -828,7 +867,7 @@ void winmain::RenderUi()
 	gdrv::grtext_draw_ttext_in_box();
 }
 
-int winmain::event_handler(const SDL_Event* event)
+int winmain::event_handler(const SDL_Event *event)
 {
 	auto inputDown = false;
 	switch (event->type)
@@ -877,7 +916,7 @@ int winmain::event_handler(const SDL_Event* event)
 		case SDL_CONTROLLERBUTTONDOWN:
 		case SDL_CONTROLLERBUTTONUP:
 			return 1;
-		default: ;
+		default:;
 		}
 	}
 
@@ -1011,7 +1050,7 @@ int winmain::event_handler(const SDL_Event* event)
 		case SDL_WINDOWEVENT_RESIZED:
 			fullscrn::window_size_changed();
 			break;
-		default: ;
+		default:;
 		}
 		break;
 	case SDL_JOYDEVICEADDED:
