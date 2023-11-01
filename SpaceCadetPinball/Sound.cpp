@@ -28,6 +28,7 @@ void Sound::Enable(int channelFrom, int channelTo, int enableFlag)
 
 void Sound::Activate()
 {
+	Mix_Volume(-1, MIX_MAX_VOLUME * 0.5);
 	Mix_Resume(-1);
 }
 

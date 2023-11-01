@@ -54,15 +54,14 @@ void run_loop(std::function<void()> fn)
 {
 #ifdef __EMSCRIPTEN__
 	emscripten_set_main_loop_arg([](void *arg)
-								 {
+															 {
 									 auto *fn_ptr = (std::function<void()> *)arg;
 									 if (!loop_stop && fn_ptr != nullptr)
 									 {
 										 auto &fn = *fn_ptr;
 										 fn();
-									 }
-								 },
-								 (void *)&fn, 60, 1);
+									 } },
+															 (void *)&fn, 60, 1);
 #else
 	while (!loop_stop)
 	{
@@ -107,10 +106,10 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 
 	// SDL window
 	SDL_Window *window = SDL_CreateWindow(
-		pinball::get_rc_string(38, 0),
-		SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-		600, 440,
-		SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
+			pinball::get_rc_string(38, 0),
+			SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+			600, 440,
+			SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
 	MainWindow = window;
 	if (!window)
 	{
@@ -119,9 +118,9 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	}
 
 	SDL_Renderer *renderer = SDL_CreateRenderer(
-		window,
-		-1,
-		SDL_RENDERER_ACCELERATED);
+			window,
+			-1,
+			SDL_RENDERER_ACCELERATED);
 	Renderer = renderer;
 	if (!renderer)
 	{
@@ -162,7 +161,7 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 		if (pb::init())
 		{
 			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not load game data",
-									 "The .dat file is missing", window);
+															 "The .dat file is missing", window);
 			return 1;
 		}
 
@@ -197,7 +196,8 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	double frameDuration = TargetFrameTime.count(), UpdateToFrameCounter = 0;
 	DurationMs sleepRemainder(0);
 	auto prevTime = frameStart;
-	run_loop([&]() {
+	run_loop([&]()
+					 {
 		if (DispFrameRate)
 		{
 			auto curTime = Clock::now();
@@ -323,8 +323,7 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 			                         2 * TargetFrameTime.count());
 			frameStart = frameEnd;
 			UpdateToFrameCounter++;
-		}
-	});
+		} });
 
 	gdrv::destroy_bitmap(&gfr_display);
 	options::uninit();
@@ -469,7 +468,7 @@ void winmain::RenderUi()
 					options::toggle(Menu1::WindowLinearFilter);
 				}
 				ImGui::DragFloat("UI Scale", &ImIO->FontGlobalScale, 0.005f, 0.8f, 5,
-				                 "%.2f", ImGuiSliderFlags_AlwaysClamp);
+												 "%.2f", ImGuiSliderFlags_AlwaysClamp);
 				ImGui::Separator();
 
 				auto changed = false;
@@ -480,18 +479,18 @@ void winmain::RenderUi()
 					options::Options.FramesPerSecond = options::DefFps;
 				}
 				if (ImGui::DragInt("UPS", &options::Options.UpdatesPerSecond, 1, options::MinUps, options::MaxUps,
-				                   "%d", ImGuiSliderFlags_AlwaysClamp))
+													 "%d", ImGuiSliderFlags_AlwaysClamp))
 				{
 					changed = true;
 					options::Options.FramesPerSecond = std::min(options::Options.UpdatesPerSecond,
-					                                            options::Options.FramesPerSecond);
+																											options::Options.FramesPerSecond);
 				}
 				if (ImGui::DragInt("FPS", &options::Options.FramesPerSecond, 1, options::MinFps, options::MaxFps,
-				                   "%d", ImGuiSliderFlags_AlwaysClamp))
+													 "%d", ImGuiSliderFlags_AlwaysClamp))
 				{
 					changed = true;
 					options::Options.UpdatesPerSecond = std::max(options::Options.UpdatesPerSecond,
-					                                             options::Options.FramesPerSecond);
+																											 options::Options.FramesPerSecond);
 				}
 				if (changed)
 				{
@@ -582,6 +581,19 @@ int winmain::event_handler(const SDL_Event *event)
 		return_value = 0;
 		return 0;
 	case SDL_KEYUP:
+		switch (event->key.keysym.sym)
+		{
+		case SDLK_LEFT:
+			pb::keyup(options::Options.LeftFlipperKey);
+			break;
+		case SDLK_RIGHT:
+			pb::keyup(options::Options.RightFlipperKey);
+			break;
+		case SDLK_SPACE:
+			pb::keyup(options::Options.PlungerKey);
+			break;
+		}
+
 		pb::keyup(event->key.keysym.sym);
 		break;
 	case SDL_KEYDOWN:
@@ -593,6 +605,15 @@ int winmain::event_handler(const SDL_Event *event)
 			if (options::Options.FullScreen)
 				options::toggle(Menu1::Full_Screen);
 			SDL_MinimizeWindow(MainWindow);
+			break;
+		case SDLK_LEFT:
+			pb::keydown(options::Options.LeftFlipperKey);
+			break;
+		case SDLK_RIGHT:
+			pb::keydown(options::Options.RightFlipperKey);
+			break;
+		case SDLK_SPACE:
+			pb::keydown(options::Options.PlungerKey);
 			break;
 		case SDLK_F2:
 			new_game();

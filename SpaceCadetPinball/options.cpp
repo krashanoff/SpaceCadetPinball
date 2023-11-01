@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "options.h"
 
+#include <iostream>
+using namespace std;
+
 #include "fullscrn.h"
 #include "memory.h"
 #include "midi.h"
@@ -182,6 +185,7 @@ void options::toggle(Menu1 uIDCheckItem)
 	case Menu1::Music:
 		newValue = Options.Music == 0;
 		Options.Music = Options.Music == 0;
+cerr << "Music turn " << newValue << endl;
 		if (!newValue)
 			midi::music_stop();
 		else

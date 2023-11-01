@@ -122,11 +122,19 @@ int midi::music_stop()
 		return stop_ft();
 	}
 
+	int result = 0;
 #ifdef MUSIC_SDL
-	return Mix_HaltMusic();
+	result = Mix_HaltMusic();
+#elif MUSIC_TSF
+	// Mix_HookMusic(nullptr, nullptr);
+	tsf_note_off_all(tsfSynth);
+	active_track = {false, nullptr};
+	currentMessage = nullptr;
+	midiTime = 0.0f;
 #else
 	return 0;
 #endif
+	return result;
 }
 
 #ifdef MUSIC_TSF
