@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "options.h"
 
+#include <iostream>
+using namespace std;
+
 #include "fullscrn.h"
 #include "midi.h"
 #include "pb.h"

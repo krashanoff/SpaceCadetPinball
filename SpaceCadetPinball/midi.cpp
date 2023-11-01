@@ -109,6 +109,20 @@ void midi::music_stop()
 		NextTrack = active_track;
 		StopPlayback();
 	}
+
+	int result = 0;
+#ifdef MUSIC_SDL
+	result = Mix_HaltMusic();
+#elif MUSIC_TSF
+	// Mix_HookMusic(nullptr, nullptr);
+	tsf_note_off_all(tsfSynth);
+	active_track = {false, nullptr};
+	currentMessage = nullptr;
+	midiTime = 0.0f;
+#else
+	return 0;
+#endif
+	return result;
 }
 
 void midi::StopPlayback()

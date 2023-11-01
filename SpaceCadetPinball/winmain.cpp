@@ -64,15 +64,14 @@ void run_loop(std::function<void()> fn)
 {
 #ifdef __EMSCRIPTEN__
 	emscripten_set_main_loop_arg([](void *arg)
-								 {
+															 {
 									 auto *fn_ptr = (std::function<void()> *)arg;
 									 if (!loop_stop && fn_ptr != nullptr)
 									 {
 										 auto &fn = *fn_ptr;
 										 fn();
-									 }
-								 },
-								 (void *)&fn, 60, 1);
+									 } },
+															 (void *)&fn, 60, 1);
 #else
 	while (!loop_stop)
 	{
@@ -103,12 +102,26 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	pb::quickFlag = strstr(lpCmdLine, "-quick") != nullptr;
 
 	// SDL window
+<<<<<<< HEAD
 	SDL_Window* window = SDL_CreateWindow
 	(
 		pb::get_rc_string(Msg::STRING139),
 		SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
 		600, 440,
 		SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
+||||||| parent of 93fe66e (Music toggle actually works also use arrow keys for bumpers)
+	SDL_Window *window = SDL_CreateWindow(
+		pinball::get_rc_string(38, 0),
+		SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+		600, 440,
+		SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
+=======
+	SDL_Window *window = SDL_CreateWindow(
+			pinball::get_rc_string(38, 0),
+			SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+			600, 440,
+			SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
+>>>>>>> 93fe66e (Music toggle actually works also use arrow keys for bumpers)
 	MainWindow = window;
 	if (!window)
 	{
@@ -116,6 +129,7 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 		return 1;
 	}
 
+<<<<<<< HEAD
 	// If HW fails, fallback to SW SDL renderer.
 	SDL_Renderer* renderer = nullptr;
 	auto swOffset = strstr(lpCmdLine, "-sw") != nullptr ? 1 : 0;
@@ -128,6 +142,19 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 			i == 0 ? SDL_RENDERER_ACCELERATED : SDL_RENDERER_SOFTWARE
 		);
 	}
+||||||| parent of 93fe66e (Music toggle actually works also use arrow keys for bumpers)
+	SDL_Renderer *renderer = SDL_CreateRenderer(
+		window,
+		-1,
+		SDL_RENDERER_ACCELERATED);
+	Renderer = renderer;
+=======
+	SDL_Renderer *renderer = SDL_CreateRenderer(
+			window,
+			-1,
+			SDL_RENDERER_ACCELERATED);
+	Renderer = renderer;
+>>>>>>> 93fe66e (Music toggle actually works also use arrow keys for bumpers)
 	if (!renderer)
 	{
 		pb::ShowMessageBox(SDL_MESSAGEBOX_ERROR, "Could not create renderer", SDL_GetError());
@@ -238,6 +265,7 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 
 		if (pb::init())
 		{
+<<<<<<< HEAD
 			std::string message = "The .dat file is missing.\n"
 				"Make sure that the game data is present in any of the following locations:\n";
 			for (auto path : searchPaths)
@@ -248,6 +276,13 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 				}
 			}
 			pb::ShowMessageBox(SDL_MESSAGEBOX_ERROR, "Could not load game data", message.c_str());
+||||||| parent of 93fe66e (Music toggle actually works also use arrow keys for bumpers)
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not load game data",
+									 "The .dat file is missing", window);
+=======
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not load game data",
+															 "The .dat file is missing", window);
+>>>>>>> 93fe66e (Music toggle actually works also use arrow keys for bumpers)
 			return 1;
 		}
 
@@ -311,9 +346,16 @@ void winmain::MainLoop()
 	double UpdateToFrameCounter = 0;
 	DurationMs sleepRemainder(0), frameDuration(TargetFrameTime);
 	auto prevTime = frameStart;
+<<<<<<< HEAD
 
 	while (true)
 	{
+||||||| parent of 93fe66e (Music toggle actually works also use arrow keys for bumpers)
+	run_loop([&]() {
+=======
+	run_loop([&]()
+					 {
+>>>>>>> 93fe66e (Music toggle actually works also use arrow keys for bumpers)
 		if (DispFrameRate)
 		{
 			auto curTime = Clock::now();
@@ -461,10 +503,17 @@ void winmain::MainLoop()
 			frameDuration = std::min<DurationMs>(DurationMs(frameEnd - frameStart), 2 * TargetFrameTime);
 			frameStart = frameEnd;
 			UpdateToFrameCounter++;
+<<<<<<< HEAD
 
 			CursorIdleCounter = std::max(CursorIdleCounter - static_cast<int>(frameDuration.count()), 0);
 		}
 	}
+||||||| parent of 93fe66e (Music toggle actually works also use arrow keys for bumpers)
+		}
+	});
+=======
+		} });
+>>>>>>> 93fe66e (Music toggle actually works also use arrow keys for bumpers)
 
 	if (PrevSdlErrorCount > 0)
 	{
@@ -731,6 +780,78 @@ void winmain::RenderUi()
 				{
 					options::toggle(Menu1::Prefer3DPBGameData);
 				}
+<<<<<<< HEAD
+||||||| parent of 93fe66e (Music toggle actually works also use arrow keys for bumpers)
+				if (ImGui::MenuItem("Linear Filtering", nullptr, options::Options.LinearFiltering))
+				{
+					options::toggle(Menu1::WindowLinearFilter);
+				}
+				ImGui::DragFloat("UI Scale", &ImIO->FontGlobalScale, 0.005f, 0.8f, 5,
+				                 "%.2f", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::Separator();
+
+				auto changed = false;
+				if (ImGui::MenuItem("Set Default UPS/FPS"))
+				{
+					changed = true;
+					options::Options.UpdatesPerSecond = options::DefUps;
+					options::Options.FramesPerSecond = options::DefFps;
+				}
+				if (ImGui::DragInt("UPS", &options::Options.UpdatesPerSecond, 1, options::MinUps, options::MaxUps,
+				                   "%d", ImGuiSliderFlags_AlwaysClamp))
+				{
+					changed = true;
+					options::Options.FramesPerSecond = std::min(options::Options.UpdatesPerSecond,
+					                                            options::Options.FramesPerSecond);
+				}
+				if (ImGui::DragInt("FPS", &options::Options.FramesPerSecond, 1, options::MinFps, options::MaxFps,
+				                   "%d", ImGuiSliderFlags_AlwaysClamp))
+				{
+					changed = true;
+					options::Options.UpdatesPerSecond = std::max(options::Options.UpdatesPerSecond,
+					                                             options::Options.FramesPerSecond);
+				}
+				if (changed)
+				{
+					UpdateFrameRate();
+				}
+
+=======
+				if (ImGui::MenuItem("Linear Filtering", nullptr, options::Options.LinearFiltering))
+				{
+					options::toggle(Menu1::WindowLinearFilter);
+				}
+				ImGui::DragFloat("UI Scale", &ImIO->FontGlobalScale, 0.005f, 0.8f, 5,
+												 "%.2f", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::Separator();
+
+				auto changed = false;
+				if (ImGui::MenuItem("Set Default UPS/FPS"))
+				{
+					changed = true;
+					options::Options.UpdatesPerSecond = options::DefUps;
+					options::Options.FramesPerSecond = options::DefFps;
+				}
+				if (ImGui::DragInt("UPS", &options::Options.UpdatesPerSecond, 1, options::MinUps, options::MaxUps,
+													 "%d", ImGuiSliderFlags_AlwaysClamp))
+				{
+					changed = true;
+					options::Options.FramesPerSecond = std::min(options::Options.UpdatesPerSecond,
+																											options::Options.FramesPerSecond);
+				}
+				if (ImGui::DragInt("FPS", &options::Options.FramesPerSecond, 1, options::MinFps, options::MaxFps,
+													 "%d", ImGuiSliderFlags_AlwaysClamp))
+				{
+					changed = true;
+					options::Options.UpdatesPerSecond = std::max(options::Options.UpdatesPerSecond,
+																											 options::Options.FramesPerSecond);
+				}
+				if (changed)
+				{
+					UpdateFrameRate();
+				}
+
+>>>>>>> 93fe66e (Music toggle actually works also use arrow keys for bumpers)
 				ImGui::EndMenu();
 			}
 			ImGui::Separator();

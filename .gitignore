@@ -300,3 +300,5 @@ _deps
 build.ninja
 # Build directory
 /build
+
+.DS_Store

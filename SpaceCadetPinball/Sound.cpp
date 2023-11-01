@@ -26,6 +26,8 @@ void Sound::Enable(bool enableFlag)
 
 void Sound::Activate()
 {
+	Mix_Volume(-1, MIX_MAX_VOLUME * 0.5);
+	Volume = MIX_MAX_VOLUME * 0.5;
 	if (MixOpen)
 		Mix_Resume(-1);
 }
